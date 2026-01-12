@@ -3,9 +3,8 @@ name: Update Shift Calendar
 on:
   schedule:
     - cron: "0 * * * *"   # Runs every hour
-  workflow_dispatch:      # Allows you to click "Run workflow" manually to test it
+  workflow_dispatch:      # Allows manual testing
 
-# PERMISSIONS: This allows the bot to push the new file back to your repo
 permissions:
   contents: write
 
@@ -23,39 +22,42 @@ jobs:
           python-version: "3.x"
 
       - name: Install dependencies
-        run: pip install ics requests
+        run: pip install ics
 
-      - name: Fetch and filter ICS
+      # STEP 1: Download using Curl (This mimics a real browser to bypass the block)
+      - name: Download ICS file
+        run: |
+          curl -v \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
+            -H "Accept-Language: en-US,en;q=0.5" \
+            -L \
+            -o raw_schedule.ics \
+            "https://ahs-wfm.st.inforcloudsuite.com/public/ical/63b87b39eeee/myschedule.ics"
+
+      # STEP 2: Filter the file we just downloaded
+      - name: Filter ICS with Python
         run: |
           python3 << 'EOF'
-          import requests
           from ics import Calendar, Event
           from datetime import timedelta
+          import os
 
-          # The AHS Schedule URL
-          SOURCE_URL = "https://ahs-wfm.st.inforcloudsuite.com/public/ical/63b87b39eeee/myschedule.ics"
-
-          # SPOOF HEADERS: This fixes the "400 Client Error" by pretending to be a Chrome browser
-          headers = {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-          }
-
-          # Download ICS text safely
-          try:
-              print("Attempting to download calendar...")
-              r = requests.get(SOURCE_URL, headers=headers)
-              r.raise_for_status()
-              raw_text = r.text
-              print("Download successful.")
-          except Exception as e:
-              print(f"Error downloading calendar: {e}")
+          # Verify the download worked
+          if not os.path.exists("raw_schedule.ics"):
+              print("Error: raw_schedule.ics was not found. Curl failed.")
               exit(1)
 
-          # Parse the calendar data
+          # Read the file from disk
+          with open("raw_schedule.ics", "r", encoding="utf-8") as f:
+              raw_text = f.read()
+
+          # Parse
           try:
               calendars = Calendar.parse_multiple(raw_text)
           except Exception as e:
               print(f"Error parsing calendar: {e}")
+              print(f"File preview: {raw_text[:200]}") # Debugging helper
               exit(1)
 
           clean = Calendar()
@@ -67,44 +69,36 @@ jobs:
                       start = e.begin
                       end = e.end
 
-                      # Skip malformed events
-                      if not start or not end:
-                          continue
+                      if not start or not end: continue
 
-                      # FILTER 1: Remove events named exactly "X"
-                      if title == "X":
-                          continue
+                      # REMOVE "X"
+                      if title == "X": continue
 
-                      # FILTER 2: Truncate overnight shifts
-                      # If the shift ends on a later date than it started, cut it off at 23:55
+                      # TRUNCATE OVERNIGHT SHIFTS
+                      # If shift ends on a different day, cut it off at 23:55
                       if end.date() > start.date():
                           end = start.replace(hour=23, minute=55)
 
-                      # Build the cleaned event
                       new = Event()
                       new.name = title
                       new.begin = start
                       new.end = end
-                      # Create a unique ID to prevent Google Calendar glitches
                       new.uid = f"{start.strftime('%Y%m%d%H%M')}-{title.replace(' ', '')}-darcy"
-
+                      
                       clean.events.add(new)
-
-                  except Exception:
+                  except:
                       continue
 
-          # Write the new file correctly
+          # Write final file
           with open("shifts.ics", "w") as f:
               f.write(clean.serialize())
-          print("Successfully created shifts.ics")
+          print("Success: shifts.ics created.")
           EOF
 
       - name: Commit updated ICS
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Check if there are changes before trying to commit
           git add shifts.ics
           if git diff --staged --quiet; then
             echo "No changes to commit."
