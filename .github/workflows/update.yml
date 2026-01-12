@@ -30,13 +30,10 @@ jobs:
 
           SOURCE_URL = "https://ahs-wfm.st.inforcloudsuite.com/public/ical/63b87b39eeee/myschedule.ics"
 
-          # Download ICS text
           r = requests.get(SOURCE_URL)
           raw_text = r.text
 
-          # Parse multiple calendars safely
           calendars = Calendar.parse_multiple(raw_text)
-
           clean = Calendar()
 
           for cal in calendars:
@@ -46,19 +43,15 @@ jobs:
                       start = e.begin
                       end = e.end
 
-                      # Skip malformed events
                       if not start or not end:
                           continue
 
-                      # Remove ONLY 1-minute "X" events
                       if title == "X" and (end - start) <= timedelta(minutes=1):
                           continue
 
-                      # Cap events that spill past midnight
                       if end.date() > start.date():
                           end = start.replace(hour=23, minute=55)
 
-                      # Build clean event
                       new = Event()
                       new.name = title
                       new.begin = start
@@ -68,10 +61,8 @@ jobs:
                       clean.events.add(new)
 
                   except Exception:
-                      # Skip any malformed event safely
                       continue
 
-          # Write cleaned ICS file
           with open("shifts.ics", "w") as f:
               f.writelines(clean)
           EOF
