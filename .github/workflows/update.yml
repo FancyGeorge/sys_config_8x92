@@ -1,0 +1,72 @@
+name: Update Shift Calendar
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # Runs every 6 hours
+  workflow_dispatch:        # Allows manual runs
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: pip install ics requests
+
+      - name: Fetch and filter ICS
+        run: |
+          python3 << 'EOF'
+          import requests
+          from ics import Calendar, Event
+
+          SOURCE_URL = "https://ahs-wfm.st.inforcloudsuite.com/public/ical/d2b6ca44-805a-480c-9f32-63b87b39eeee/myschedule.ics"
+
+          # Download source ICS
+          r = requests.get(SOURCE_URL)
+          source = Calendar(r.text)
+
+          clean = Calendar()
+
+          for e in source.events:
+              title = e.name.lower()
+
+              # Keep only shift events
+              if "shift" not in title:
+                  continue
+
+              # Format night vs day
+              if "night" in title:
+                  new_title = f"Night Shift"
+              else:
+                  new_title = f"Day Shift"
+
+              new = Event()
+              new.name = new_title
+              new.begin = e.begin
+              new.end = e.end
+
+              # Stable UID
+              new.uid = f"{e.begin.date()}-{new_title.replace(' ', '-')}-darcy"
+
+              clean.events.add(new)
+
+          # Write clean ICS
+          with open("shifts.ics", "w") as f:
+              f.writelines(clean)
+          EOF
+
+      - name: Commit updated ICS
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add shifts.ics
+          git commit -m "Auto-update shifts" || echo "No changes"
+          git push
