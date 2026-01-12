@@ -32,7 +32,7 @@ jobs:
             -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
             -L \
             -o raw_schedule.ics \
-            "https://ahs-wfm.st.inforcloudsuite.com/public/ical/63b87b39eeee/myschedule.ics"
+            "https://ahs-wfm.st.inforcloudsuite.com/public/ical/d2b6ca44-805a-480c-9f32-63b87b39eeee/myschedule.ics"
 
       # STEP 2: Filter and FORCE NEW FILE
       - name: Filter ICS with Python
